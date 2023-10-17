@@ -35,7 +35,7 @@ class QimgVar:
     DEFAULT_QIMG_FILE_HEADER = b"Qimg" + b"\xd07" + b"\xd08"
     DEFAULT_QIMG_SALT_FILE_HEADER = b"Qsalt" + b"\xd09" + b"\xd010"
     DEFAULT_QIMG_KEY_FILE_HEADER = b"Qkey" + b"\xd011" + b"\xd012"
-    DEFAULT_QIMG_METADATA_SIZE = 206
+    DEFAULT_QIMG_METADATA_SIZE = 221
     DEFAULT_QIMG_FILE_HEADER_SIZE = 321
     DEFAULT_MTIME_EOF_HMAC_HASH_SIZE = -64
 
@@ -131,25 +131,20 @@ class QimgFileHeader:
         fd.flush()
 class QimgFileHeaderAnalyser:
     def __init__(self,data: bytes):
-        self.data = data
+        self.data = data if len(data) == QimgVar.DEFAULT_QIMG_FILE_HEADER_SIZE else data[:QimgVar.DEFAULT_QIMG_FILE_HEADER_SIZE]
+        print(len(self.data))
     def analyse(self) -> bool:
         if len(self.data) < QimgVar.DEFAULT_QIMG_FILE_HEADER_SIZE:
-            return False
+            return -5
         elif HMAC(Build.DEFAULT_HMAC_KEY_OF_HEADER,self.data[:40]) != self.data[-64:] and zlib.crc32(self.data[:len(self.data)-4]) != struct.unpack(">I",self.data[-4:])[0]:
-            return False
-        # burada else vardı ve eklenecek
-class Qimg:
-    def __init__(self) -> None:
-        self.keygen = Keygen()
-        self.fd = open("test.Qimg","ab+")
-    def pack(self):
-        QimgFileHeader.header_stamp_to_fd(fd=self.fd)
-        for _ in range(1,150):
-            data = secrets.token_bytes(16000)
-            self.fd.write(data)
-            self.fd.flush()
-        self.fd.write(HMAC(Build.DEFAULT_HMAC_KEY_OF_EOF_MTIMESTAMP,struct.pack(">I",int(time.time()))))
-        self.fd.close()
+            return -4
+        else:
+            timestamp = self.data[len(QimgVar.DEFAULT_QIMG_FILE_HEADER) + 4:len(QimgVar.DEFAULT_QIMG_FILE_HEADER) + 4 * 2]
+            metadata = self.data[self.data.index(timestamp) + len(timestamp):QimgVar.DEFAULT_QIMG_METADATA_SIZE]
+            return {
+                "timestamp":time.ctime(struct.unpack(">I",timestamp)[0]),
+                "metadata":metadata
+            }
 class FileAnalyser:
     def __init__(self,file: str):
         self.timestamp = HMAC(Build.DEFAULT_HMAC_KEY_OF_EOF_MTIMESTAMP,struct.pack(">I",int(os.path.getmtime(file))))
@@ -162,3 +157,14 @@ class FileAnalyser:
     @property
     def is_matching(self):
         return self.get_mtime() == self.timestamp
+
+class Qimg:
+    def __init__(self,target=None):
+        self.keygen = Keygen()
+        self.fd = open("test_out.Qimg","ab+")
+    def pack(self):
+        QimgFileHeader.header_stamp_to_fd(self.fd)
+        for _ in range(1,150):
+            self.fd.write(secrets.token_bytes(15))
+        self.fd.write(HMAC(Build.DEFAULT_HMAC_KEY_OF_EOF_MTIMESTAMP,struct.pack(">I",int(time.time()))))
+        self.fd.close()
